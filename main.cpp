@@ -8,7 +8,7 @@ void rgb_to_indexed(sf::Image& image, const sf::Image& palette_image)
 	auto find_matching = [&](sf::Color color) -> int {
 		for (unsigned i = 0; i < palette_image.getSize().x; ++i)
 		{
-			if (color == palette_image.getPixel(i, 0))
+			if (color == palette_image.getPixel({i, 0u}))
 			{
 				return i;
 			}
@@ -21,31 +21,31 @@ void rgb_to_indexed(sf::Image& image, const sf::Image& palette_image)
 	{
 		for (unsigned x = 0; x < image.getSize().x; ++x)
 		{
-			auto match = find_matching(image.getPixel(x, y));
+			auto match = find_matching(image.getPixel({x, y}));
 
 			if (match == -1)
 			{
 				std::cout << "MISSING PALETTE COLOR: (" << x << "; " << y
-						  << ")!\n";
+				          << ")!\n";
 
 				continue;
 			}
 
-			image.setPixel(x, y, {std::uint8_t(match), 0, 0});
+			image.setPixel({x, y}, {std::uint8_t(match), 0, 0});
 		}
 	}
 }
 
 void load_texture_indexed(
-	sf::Texture&      texture,
-	const sf::String& path,
-	const sf::Image&  palette_image)
+    sf::Texture&      texture,
+    const sf::String& path,
+    const sf::Image&  palette_image)
 {
 	std::cout << "Loading indexed texture from file " << path.toAnsiString()
-			  << '\n';
+	          << '\n';
 
 	sf::Image image;
-	image.loadFromFile(path);
+	image.loadFromFile(path.toAnsiString());
 	rgb_to_indexed(image, palette_image);
 
 	texture.loadFromImage(image);
@@ -53,9 +53,7 @@ void load_texture_indexed(
 
 int main()
 {
-	sf::RenderWindow win{sf::VideoMode::getFullscreenModes().front(),
-						 "Lighting shader test",
-						 sf::Style::Fullscreen};
+	sf::RenderWindow win{sf::VideoMode{{1920, 1080}}, "Lighting shader test"};
 
 	win.setVerticalSyncEnabled(true);
 	win.setMouseCursorVisible(false);
@@ -70,11 +68,8 @@ int main()
 	cursor_light_sprite.setOrigin(sf::Vector2f(light_texture.getSize()) / 2.0f);
 
 	// Textures used for full-screen shader effects
-	sf::RenderTexture light_composite_texture;
-	light_composite_texture.create(win.getSize().x, win.getSize().y);
-
-	sf::RenderTexture composite_texture;
-	composite_texture.create(win.getSize().x, win.getSize().y);
+	sf::RenderTexture light_composite_texture(win.getSize());
+	sf::RenderTexture composite_texture(win.getSize());
 
 	sf::View view = win.getView();
 	view.zoom(0.5);
@@ -97,7 +92,7 @@ int main()
 		palette_texture.loadFromImage(palette_image);
 
 		load_texture_indexed(
-			palette_light_texture, "palette_light_shift.png", palette_image);
+		    palette_light_texture, "palette_light_shift.png", palette_image);
 		load_texture_indexed(tile_texture, "tile.png", palette_image);
 		load_texture_indexed(turret_texture, "turret.png", palette_image);
 	}
@@ -107,58 +102,42 @@ int main()
 	compose_shader.setUniform("palette_texture", palette_texture);
 	compose_shader.setUniform("screen_texture", composite_texture.getTexture());
 	compose_shader.setUniform(
-		"lightmap_texture", light_composite_texture.getTexture());
+	    "lightmap_texture", light_composite_texture.getTexture());
 	compose_shader.setUniform("palette_shift_texture", palette_light_texture);
 
 	while (win.isOpen())
 	{
-		sf::Event ev;
-		while (win.pollEvent(ev))
+		while (auto ev = win.pollEvent())
 		{
-			switch (ev.type)
-			{
-			case sf::Event::Closed:
+			if (ev->is<sf::Event::Closed>())
 			{
 				win.close();
-				break;
 			}
-
-			case sf::Event::MouseButtonPressed:
+			else if (
+			    const auto press = ev->getIf<sf::Event::MouseButtonPressed>())
 			{
-				switch (ev.mouseButton.button)
-				{
-				case sf::Mouse::Left:
+				if (press->button == sf::Mouse::Button::Left)
 				{
 					light_sprites.push_back(cursor_light_sprite);
-					break;
 				}
-
-				default: break;
-				}
-
-				break;
 			}
-
-			case sf::Event::MouseWheelScrolled:
+			else if (
+			    const auto scroll = ev->getIf<sf::Event::MouseWheelScrolled>())
 			{
-				light_scale += ev.mouseWheelScroll.delta * 0.025;
-				break;
+				light_scale += scroll->delta * 0.025;
 			}
-
-			case sf::Event::KeyPressed:
+			else if (const auto press = ev->getIf<sf::Event::KeyPressed>())
 			{
-				switch (ev.key.code)
+				switch (press->code)
 				{
-				case sf::Keyboard::Add:
-				{
+				case sf::Keyboard::Key::Add: {
 					auto current_color = cursor_light_sprite.getColor();
 					current_color.a += 8;
 					cursor_light_sprite.setColor(current_color);
 					break;
 				}
 
-				case sf::Keyboard::Subtract:
-				{
+				case sf::Keyboard::Key::Subtract: {
 					auto current_color = cursor_light_sprite.getColor();
 					current_color.a -= 8;
 					cursor_light_sprite.setColor(current_color);
@@ -168,13 +147,10 @@ int main()
 				default: break;
 				}
 			}
-
-			default: break;
-			}
 		}
 
 		cursor_light_sprite.setPosition(sf::Vector2f(sf::Mouse::getPosition()));
-		cursor_light_sprite.setScale(light_scale, light_scale);
+		cursor_light_sprite.setScale({light_scale, light_scale});
 
 		win.clear({34, 32, 52});
 
@@ -186,22 +162,21 @@ int main()
 			{
 				for (unsigned x = 0; x < 800; x += 16)
 				{
-					sf::Sprite sprite;
-					sprite.setTexture(tile_texture);
+					sf::Sprite sprite(tile_texture);
 
 					if (y == 256)
 					{
-						sprite.setScale(1.0f, -1.0f);
+						sprite.setScale({1.0f, -1.0f});
 					}
 
-					sprite.setPosition(float(x), float(y));
+					sprite.setPosition({float(x), float(y)});
 					composite_texture.draw(sprite);
 				}
 			}
 
-			sf::Sprite sprite;
-			sprite.setTexture(turret_texture);
-			sprite.setPosition(256, 256 + 128 - turret_texture.getSize().y);
+			sf::Sprite sprite{turret_texture};
+			sprite.setPosition(
+			    {256.0f, 256.0f + 128.0f - turret_texture.getSize().y});
 			composite_texture.draw(sprite);
 
 			composite_texture.display();
@@ -229,8 +204,7 @@ int main()
 			sf::RenderStates states;
 			states.shader = &compose_shader;
 
-			sf::Sprite composite_sprite;
-			composite_sprite.setTexture(composite_texture.getTexture());
+			sf::Sprite composite_sprite{composite_texture.getTexture()};
 
 			win.draw(composite_sprite, states);
 		}
